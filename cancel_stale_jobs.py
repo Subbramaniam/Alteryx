@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 import requests
  
 if sys.version_info < (3, 6):
-    sys.exit("This script requires Python 3.6+ (f-strings and datetime.fromisoformat). Use python3.10 or newer.")
+    sys.exit("This script requires Python 3.6 or newer.")
 
 ACTIVE_STATUSES = {"Created", "Pending", "InProgress"}
 PAGE_SIZE = 25
@@ -33,16 +33,21 @@ def parse_ts(value):
     if value.endswith("Z"):
         value = value[:-1] + "+00:00"
 
-    try:
+    # Python 3.7+ has datetime.fromisoformat; Python 3.6 does not.
+    if hasattr(datetime, "fromisoformat"):
         return datetime.fromisoformat(value)
-    except AttributeError:
-        # Python 3.6 compatibility: fromisoformat is not available there.
-        for fmt in ("%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z"):
-            try:
-                return datetime.strptime(value, fmt)
-            except ValueError:
-                continue
-        raise
+
+    # Python 3.6 compatibility: normalize timezone offset to +HHMM before parsing.
+    # Example: 2026-11-06T09:12:33.000+00:00 -> 2026-11-06T09:12:33.000+0000
+    if len(value) >= 6 and value[-3] == ":" and value[-6] in "+-":
+        value = value[:-3] + value[-2:]
+
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z"):
+        try:
+            return datetime.strptime(value, fmt)
+        except ValueError:
+            continue
+    raise ValueError("Unsupported timestamp format: {}".format(value))
 
  
 def list_job_groups(session, base_url, lookback_days):
